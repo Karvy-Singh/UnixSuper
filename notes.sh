@@ -80,9 +80,9 @@ clampBrowser() {
         browseIndex=0
         return
     elif [ "$browseIndex" -lt 0 ]; then
-        browseIndex=0
-    elif [ "$browseIndex" -ge "$n" ]; then
         browseIndex=$((n-1))
+    elif [ "$browseIndex" -ge "$n" ]; then
+        browseIndex=0
     fi
 }
 
@@ -124,7 +124,6 @@ panel_title() {
 
 renderSidePane() {
     panel_title 0 0 "$leftWidth" "Notes (${#presentFiles[@]}) — ${mode^^}"
-    local files=$listHeight
     local start=$browseOffset
     local n=${#presentFiles[@]}
     local i=$start
@@ -135,9 +134,8 @@ renderSidePane() {
         printf '%-*s' "$leftWidth" ' '
         if (( i < n )); then
             move 0 "$y"
-            if (( i == browseIndex )); then tput rev; fi
-            local basename_file
-            basename_file=$(basename "${presentFiles[i]}")
+            if (( i == browseIndex )); then tput rev; fi #reverse vid; for highlighting.
+            local basename_file=$(basename "${presentFiles[i]}")
             printf ' %-*.*s' "$((leftWidth-2))" "$((leftWidth-2))" "$basename_file"
             if (( i == browseIndex )); then tput sgr0; fi
         fi
@@ -157,13 +155,13 @@ renderPreview() {
 
     local content
     if [ -f "$file" ]; then
-        content="$("${preview[@]}" "$file" 2>/dev/null | sed "${previewHeight}q")"
+        content="$("${preview[@]}" "$file" 2>/dev/null | sed "${previewHeight}q")"  #quit sed after those certain number of lines.
     else
         content="(no file)"
     fi
 
     local line=1
-    while IFS= read -r l && (( line < previewHeight )); do
+    while IFS= read -r l && (( line < previewHeight )); do  #internal feild seperator, bash used to sep on basis of \n \t, set to nothing to perserve all user data as is
         move "$leftWidth" "$line"
         printf '%-*.*s' "$previewWidth" "$previewWidth" "${l//$'\t'/    }"
         line=$((line+1))
@@ -175,7 +173,7 @@ renderStatus() {
     move 0 $((lines-1))
     printf ' [Enter/e] Edit  [n] New  [r] Rename  [d] Delete  [/] Search  [q] Quit  | Dir: %s ' "$notesDir"
     if [ -n "$status" ]; then
-        local trunc=${status:0:$((columns-10))}
+        local trunc=${status:0:$((columns-10))}  #if the status is too long then it will truncate it to max wdith-10
         move 0 $((lines-1))
         printf '%-*s' "$columns" " $trunc"
     fi
@@ -184,7 +182,7 @@ renderStatus() {
 renderSearchStatus() {
     partitionH $((lines-2))
     move 0 $((lines-1))
-    printf ' [Enter/e] Edit@line  [b] Back  [q] Quit  | Results: %d ' "${#searchedFiles[@]}"
+    printf ' [Enter/e] Edit  [b] Browse  [q] Quit  | Results: %d ' "${#searchedFiles[@]}"
     if [ -n "$status" ]; then
         local trunc=${status:0:$((columns-10))}
         move 0 $((lines-1))
@@ -194,18 +192,19 @@ renderSearchStatus() {
 
 renderSearchList() {
     panel_title 0 0 "$leftWidth" "Search Results (${#searchedFiles[@]})"
-    local y i n
-    n=${#searchedFiles[@]}
-    i=$searchOffset
+    local start=$searchOffset
+    local n=${#searchedFiles[@]}
+    local i=$start
+    local y
 
     for ((y=1; y<listHeight; y++, i++)); do
         move 0 "$y"
         printf '%-*s' "$leftWidth" ' '
         if (( i < n )); then
             move 0 "$y"
-            if (( i == searchIndex )); then tput rev; fi
-            local display="${searchedFiles[i]}"
-            printf ' %-*.*s' "$((leftWidth-2))" "$((leftWidth-2))" "$display"
+            if (( i == searchIndex )); then tput rev; fi #reverse vid; for highlighting.
+            local basename_file=$(basename "${searchedFiles[i]}")
+            printf ' %-*.*s' "$((leftWidth-2))" "$((leftWidth-2))" "$basename_file"
             if (( i == searchIndex )); then tput sgr0; fi
         fi
     done
@@ -248,12 +247,11 @@ runSearch() {
     fi
 
     while IFS= read -r line; do
-        local f rest l s
+        local f rest s
         f=${line%%:*}
         rest=${line#*:}
-        l=${rest%%:*}
         s=${rest#*:}
-        searchedFiles+=("$f:$l")
+        searchedFiles+=("$f")
         searchedSnips+=("$s")
     done < <(grep -RIn -- "$query" "$notesDir" 2>/dev/null || true)
 
@@ -278,10 +276,11 @@ draw_all() {
     esac
 }
 
+# to read functions like arrow keys etc.
 read_key() {
     IFS= read -rsn1 key || return 1
     case "$key" in
-        $'\e')
+        $'\e') #esc seq check
             IFS= read -rsn2 -t 0.001 rest || rest=""
             key+="$rest"
             ;;
@@ -293,19 +292,20 @@ moveSelection() {
     local -n idx=$1
     local -n off=$2
     local max=$3
-    local delta=$4
+    local delta=$4 #this is to determine the movement of selection up or down
 
     if ((max<=0)); then
         return
     fi
 
+    #clamping for proper val
     idx=$(( idx + delta ))
     if (( idx<0 )); then
-        idx=0
-    elif (( idx>=max )); then
         idx=$((max-1))
+    elif (( idx>=max )); then
+        idx=0
     fi
-
+    # keep within window
     if (( idx < off )); then
         off=$idx
     fi
@@ -340,13 +340,14 @@ newNote() {
     local slug
     slug=$(slugify "$title")
     local file="$notesDir/${slug}.txt"
-
-    { printf '# %s\n\n- Created: %s\n\n' "$title" "$(date '+%Y-%m-%d %H:%M')"; } >"$file"
+    alt_screen_off
+    $editor $file
+    alt_screen_on
 
     refresh
     browseIndex=0
     browseOffset=0
-    status="Created: $slug"
+    status="Created: $slug.txt "$(date '+%Y-%m-%d %H:%M')""
 }
 
 renameNote() {
@@ -415,6 +416,7 @@ loop_browse() {
                 stty "$tty_settings"
                 mode="search"
                 runSearch "$query"
+                return
                 ;;
             q)         return ;;
         esac
@@ -445,17 +447,15 @@ loop_search() {
 alt_screen_on
 layoutDim
 tput clear
-status="Arrows/jk to move. Enter to edit. / to search. q to quit."
+mode="browse"
 
 while :; do
     case "$mode" in
-        browse)
-            loop_browse
-            [[ $mode == browse ]] && break
-            ;;
-        search)
-            loop_search
-            ;;
+        browse)  loop_browse ;;
+        search)  loop_search ;;
+        quit)    break ;;
     esac
     refresh
 done
+
+
