@@ -58,6 +58,11 @@ searchOffset=0
 mode="browse"
 status=""
 
+set_status() {
+    status="$1"
+    status_until=$(( $(date +%s) + 2 ))
+}
+
 declare -a searchedFiles searchedSnips
 
 slugify() {
@@ -66,13 +71,14 @@ slugify() {
 
 list_files() {
     if [ -d "$notesDir" ] && [ "$(ls -A "$notesDir" 2>/dev/null)" ]; then
-        ls -t "$notesDir" | while read -r f; do
+        ls -t -- "$notesDir" | while read -r f; do
             printf '%s/%s\n' "$notesDir" "$f"
         done
     fi
+    return 0
 }
 
-mapfile -t presentFiles < <(list_files)
+mapfile -t presentFiles < <(list_files) || presentFiles=()
 
 clampBrowser() {
     local n=${#presentFiles[@]}
@@ -87,7 +93,7 @@ clampBrowser() {
 }
 
 refresh() {
-    mapfile -t presentFiles < <(list_files)
+    mapfile -t presentFiles < <(list_files) || presentFiles=()
     clampBrowser
 }
 
@@ -149,6 +155,12 @@ renderPreview() {
         move "$leftWidth" "$y"
         printf '%-*s' "$previewWidth" ' '
     done
+
+    if [ ${#presentFiles[@]} -eq 0 ]; then
+        move "$leftWidth" 1
+        printf ' No notes yet. Press [n] to create one.'
+        return
+    fi
 
     local file="${presentFiles[browseIndex]:-}"
     [ -n "$file" ] || return
@@ -220,7 +232,11 @@ renderSearchPreview() {
         printf '%-*s' "$previewWidth" ' '
     done
 
-    [ -n "$file" ] || return
+    if [ ${#searchedFiles[@]} -eq 0 ]; then
+        move "$leftWidth" 1
+        printf ' No results found.'
+        return
+    fi
 
     local content
     if [ -f "$file" ]; then
@@ -243,7 +259,8 @@ runSearch() {
     searchedSnips=()
 
     if [ -z "$query" ]; then
-        return
+        set_status "Aborted Search";
+        mode="browse"
     fi
 
     while IFS= read -r line; do
@@ -260,6 +277,14 @@ runSearch() {
 }
 
 draw_all() {
+
+    local now
+    now=$(date +%s)
+    if (( ${status_until:-0} > 0 && now >= ${status_until:-0} )); then
+        status=""
+        status_until=0
+    fi
+
     layoutDim
     tput clear
     case "$mode" in
@@ -335,7 +360,7 @@ newNote() {
     IFS= read -r title
     stty "$tty_settings"
 
-    [ -n "$title" ] || { status="Aborted"; return; }
+    [ -n "$title" ] || { set_status "Aborted"; return; }
 
     local slug
     slug=$(slugify "$title")
@@ -347,12 +372,12 @@ newNote() {
     refresh
     browseIndex=0
     browseOffset=0
-    status="Created: $slug.txt "$(date '+%Y-%m-%d %H:%M')""
+    set_status "Created: $slug.txt "$(date '+%Y-%m-%d %H:%M')""
 }
 
 renameNote() {
     local file=${presentFiles[browseIndex]:-}
-    [ -f "$file" ] || { status="No file"; return; }
+    [ -f "$file" ] || { set_status "No file"; return; }
 
     move 0 $((lines-1))
     printf '%-*s' "$columns" " Rename to: "
@@ -362,20 +387,20 @@ renameNote() {
     IFS= read -r title
     stty "$tty_settings"
 
-    [ -n "$title" ] || { status="Aborted"; return; }
+    [ -n "$title" ] || { set_status "Aborted"; return; }
 
     local slug
     slug=$(slugify "$title")
     local new="$notesDir/${slug}.txt"
 
     mv "$file" "$new"
-    status="Renamed to $(basename "$new")"
+    set_status "Renamed to $(basename "$new")"
     refresh
 }
 
 deleteNote() {
     local file=${presentFiles[browseIndex]:-}
-    [ -f "$file" ] || { status="No file"; return; }
+    [ -f "$file" ] || { set_status "No file"; return; }
 
     move 0 $((lines-1))
     printf '%-*s' "$columns" " Delete $(basename "$file") ? [y/N] "
@@ -384,11 +409,11 @@ deleteNote() {
     case "$yn" in
         y|Y)
             rm -f "$file"
-            status="Deleted"
+            set_status "Deleted"
             refresh
             ;;
         *)
-            status="Aborted"
+            set_status "Aborted"
             ;;
     esac
 }
@@ -402,7 +427,7 @@ loop_browse() {
             $'\e[B'|j) moveSelection browseIndex browseOffset "${#presentFiles[@]}" 1 ;;
             $'\e[5'*)  moveSelection browseIndex browseOffset "${#presentFiles[@]}" -10 ;;
             $'\e[6'*)  moveSelection browseIndex browseOffset "${#presentFiles[@]}" 10 ;;
-            e|$'\n')   [ -n "${presentFiles[browseIndex]:-}" ] && openEditor "${presentFiles[browseIndex]}" ;;
+            e|'')   [ -n "${presentFiles[browseIndex]:-}" ] && openEditor "${presentFiles[browseIndex]}" ;;
             n)         newNote ;;
             r)         renameNote ;;
             d)         deleteNote ;;
@@ -418,7 +443,7 @@ loop_browse() {
                 runSearch "$query"
                 return
                 ;;
-            q)         return ;;
+            q)         mode="quit"; return ;;
         esac
     done
 }
@@ -430,7 +455,7 @@ loop_search() {
         case "$key" in
             $'\e[A'|k) moveSelection searchIndex searchOffset "${#searchedFiles[@]}" -1 ;;
             $'\e[B'|j) moveSelection searchIndex searchOffset "${#searchedFiles[@]}" 1 ;;
-            e|$'\n')
+            e|'')
                 if [ -n "${searchedFiles[searchIndex]:-}" ]; then
                     local entry="${searchedFiles[searchIndex]}"
                     local file="${entry%%:*}"
@@ -438,7 +463,7 @@ loop_search() {
                 fi
                 ;;
             b)         mode="browse"; return ;;
-            q)         return ;;
+            q)        mode="quit"; return ;;
         esac
     done
 }
