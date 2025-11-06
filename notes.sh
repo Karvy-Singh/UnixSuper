@@ -55,6 +55,9 @@ browseIndex=0
 searchIndex=0
 browseOffset=0
 searchOffset=0
+calendarDate=$(date +%Y-%m-%d)
+calendarIndex=0
+calendarOffset=0
 mode="browse"
 status=""
 
@@ -253,6 +256,58 @@ renderSearchPreview() {
     done <<< "$content"
 }
 
+renderCalendar() {
+    panel_title 0 0 "$leftWidth" "Calendar"
+
+    local day=$(date -d "$calendarDate" +%d)
+    local month=$(date -d "$calendarDate" +%m)
+    local year=$(date -d "$calendarDate" +%Y)
+
+    local cal_output=$(cal $day $month $year)
+
+    local line=1
+    while IFS= read -r l && (( line < listHeight )); do
+        move 0 "$line"
+        printf '%-*.*s' "$leftWidth" "$leftWidth" "$l"
+        line=$((line+1))
+    done <<< "$cal_output"
+}
+
+renderTasks() {
+    panel_title "$leftWidth" 0 "$previewWidth" "Tasks - $(date -d "$calendarDate" +%Y-%m-%d)"
+
+    mapfile -t tasks < <(list_tasks)
+
+    local y
+    for ((y=1; y<previewHeight; y++)); do
+        move "$leftWidth" "$y"
+        printf '%-*s' "$previewWidth" ' '
+    done
+
+    if [ ${#tasks[@]} -eq 0 ]; then
+        move "$leftWidth" 1
+        printf ' No tasks. Press [n] to add.'
+        return
+    fi
+
+    local line=1
+    for task in "${tasks[@]}"; do
+        [ $line -ge $previewHeight ] && break
+        move "$leftWidth" "$line"
+        if (( line-1 == calendarIndex )); then tput rev; fi
+        local display="${task#*\# TASK:*:}"
+        printf ' %-*.*s' "$((previewWidth-2))" "$((previewWidth-2))" "$display"
+        if (( line-1 == calendarIndex )); then tput sgr0; fi
+        line=$((line+1))
+    done
+}
+
+renderCalendarStatus() {
+    partitionH $((lines-2))
+    move 0 $((lines-1))
+    printf ' [←→] Change Day  [n] New Task  [d] Delete  [b] Browse  [q] Quit'
+}
+
 runSearch() {
     local query="$1"
     searchedFiles=()
@@ -297,6 +352,11 @@ draw_all() {
             renderSearchList
             renderSearchPreview
             renderSearchStatus
+            ;;
+        calendar)
+            renderCalendar
+            renderTasks
+            renderCalendarStatus
             ;;
     esac
 }
@@ -418,6 +478,43 @@ deleteNote() {
     esac
 }
 
+list_tasks() {
+    local day=$(date -d "$calendarDate" +%Y-%m-%d)
+    crontab -l 2>/dev/null | grep "# TASK:$day:" || true
+}
+
+newTask() {
+    local day=$(date -d "$calendarDate" +%Y-%m-%d)
+    move 0 $((lines-1))
+    printf '%-*s' "$columns" ' Task & Time (HH:MM): '
+    tty_settings=$(stty -g)
+    stty echo
+    IFS= read -r input
+    stty "$tty_settings"
+
+    [ -n "$input" ] || { set_status "Aborted"; return; }
+
+    local time="${input##* }"
+    local task="${input% *}"
+    local hour="${time%%:*}"
+    local min="${time##*:}"
+
+    (crontab -l 2>/dev/null; echo "$min $hour $(date -d "$day" +%d) $(date -d "$day" +%m) * notify-send '$task' # TASK:$day:$task") | crontab -
+    set_status "Task added"
+}
+
+deleteTask() {
+    local day=$(date -d "$calendarDate" +%Y-%m-%d)
+    mapfile -t tasks < <(list_tasks)
+    [ ${#tasks[@]} -eq 0 ] && { set_status "No tasks"; return; }
+
+    local task="${tasks[calendarIndex]:-}"
+    [ -z "$task" ] && return
+
+    crontab -l | grep -vF "$task" | crontab -
+    set_status "Deleted"
+}
+
 loop_browse() {
     while :; do
         draw_all
@@ -431,6 +528,7 @@ loop_browse() {
             n)         newNote ;;
             r)         renameNote ;;
             d)         deleteNote ;;
+            c) mode="calendar"; return ;;
             /)
                 move 0 $((lines-1))
                 printf '%-*s' "$columns" " Search: "
@@ -468,6 +566,29 @@ loop_search() {
     done
 }
 
+loop_calendar() {
+    while :; do
+        draw_all
+        key=$(read_key) || return
+        case "$key" in
+            $'\e[A'|k)
+                mapfile -t tasks < <(list_tasks)
+                moveSelection calendarIndex calendarOffset "${#tasks[@]}" -1
+                ;;
+            $'\e[B'|j)
+                mapfile -t tasks < <(list_tasks)
+                moveSelection calendarIndex calendarOffset "${#tasks[@]}" 1
+                ;;
+            $'\e[D') calendarDate=$(date -d "$calendarDate - 1 day" +%Y-%m-%d) ;;
+            $'\e[C') calendarDate=$(date -d "$calendarDate + 1 day" +%Y-%m-%d) ;;
+            n) newTask ;;
+            d) deleteTask ;;
+            b) mode="browse"; return ;;
+            q) mode="quit"; return ;;
+        esac
+    done
+}
+
 # Main
 alt_screen_on
 layoutDim
@@ -478,6 +599,7 @@ while :; do
     case "$mode" in
         browse)  loop_browse ;;
         search)  loop_search ;;
+        calendar) loop_calendar ;;
         quit)    break ;;
     esac
     refresh
