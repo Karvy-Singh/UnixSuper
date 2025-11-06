@@ -263,14 +263,21 @@ renderCalendar() {
     local month=$(date -d "$calendarDate" +%m)
     local year=$(date -d "$calendarDate" +%Y)
 
-    local cal_output=$(cal $day $month $year)
+    local cal_output=$(cal $month $year)
+    local day_no_zero=$((10#$day)) # converts the day to a number like 05 be 5 now for correct matching, 10# means using 10 base
 
     local line=1
     while IFS= read -r l && (( line < listHeight )); do
         move 0 "$line"
-        printf '%-*.*s' "$leftWidth" "$leftWidth" "$l"
+
+        #pattern for finding space date space OR space date nothing OR nothing date space
+        if echo "$l" | grep -qE "(^| )$day_no_zero( |$)"; then
+            l=$(echo "$l" | sed "s/\<$day_no_zero\>/$(tput rev)$day_no_zero$(tput sgr0)/")
+        fi
+
+        printf '%-*s' "$leftWidth" "$l"
         line=$((line+1))
-    done <<< "$cal_output"
+    done<<<"$cal_output"
 }
 
 renderTasks() {
@@ -485,34 +492,63 @@ list_tasks() {
 
 newTask() {
     local day=$(date -d "$calendarDate" +%Y-%m-%d)
+
+    # Get task description
     move 0 $((lines-1))
-    printf '%-*s' "$columns" ' Task & Time (HH:MM): '
+    printf '%-*s' "$columns" ' Task: '
+    move 7 $((lines-1))
     tty_settings=$(stty -g)
     stty echo
-    IFS= read -r input
+    IFS= read -r task
     stty "$tty_settings"
 
-    [ -n "$input" ] || { set_status "Aborted"; return; }
+    [ -n "$task" ] || { set_status "Aborted"; return; }
 
-    local time="${input##* }"
-    local task="${input% *}"
+    # Get time
+    move 0 $((lines-1))
+    printf '%-*s' "$columns" ' Time (HH:MM): '
+    move 15 $((lines-1))
+    stty echo
+    IFS= read -r time
+    stty "$tty_settings"
+
+    [ -n "$time" ] || { set_status "Aborted"; return; }
+
     local hour="${time%%:*}"
     local min="${time##*:}"
 
-    (crontab -l 2>/dev/null; echo "$min $hour $(date -d "$day" +%d) $(date -d "$day" +%m) * notify-send '$task' # TASK:$day:$task") | crontab -
-    set_status "Task added"
+    (crontab -l 2>/dev/null; \
+            printf '%s %s %s %s * XDG_RUNTIME_DIR=/run/user/%s DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%s/bus DISPLAY=:0 /usr/bin/notify-send --app-name=Task "Task" %q # TASK:%s:%s\n' \
+            "$min" "$hour" "$(date -d "$day" +%d)" "$(date -d "$day" +%m)" \
+            "$(id -u)" "$(id -u)" \
+        "$task" "$day" "$task") | crontab -
+
+    set_status "Task added: $task at $time"
 }
 
 deleteTask() {
     local day=$(date -d "$calendarDate" +%Y-%m-%d)
     mapfile -t tasks < <(list_tasks)
+
     [ ${#tasks[@]} -eq 0 ] && { set_status "No tasks"; return; }
+    [ $calendarIndex -ge ${#tasks[@]} ] && { set_status "No task selected"; return; }
 
-    local task="${tasks[calendarIndex]:-}"
-    [ -z "$task" ] && return
+    local task="${tasks[calendarIndex]}"
 
-    crontab -l | grep -vF "$task" | crontab -
-    set_status "Deleted"
+    move 0 $((lines-1))
+    printf '%-*s' "$columns" " Delete task? [y/N] "
+    IFS= read -rsn1 yn
+
+    case "$yn" in
+        y|Y)
+            crontab -l 2>/dev/null | grep -vF "$task" | crontab - 2>/dev/null || true
+            calendarIndex=0
+            set_status "Deleted"
+            ;;
+        *)
+            set_status "Aborted"
+            ;;
+    esac
 }
 
 loop_browse() {
@@ -573,14 +609,20 @@ loop_calendar() {
         case "$key" in
             $'\e[A'|k)
                 mapfile -t tasks < <(list_tasks)
-                moveSelection calendarIndex calendarOffset "${#tasks[@]}" -1
+                [ ${#tasks[@]} -gt 0 ] && moveSelection calendarIndex calendarOffset "${#tasks[@]}" -1
                 ;;
             $'\e[B'|j)
                 mapfile -t tasks < <(list_tasks)
-                moveSelection calendarIndex calendarOffset "${#tasks[@]}" 1
+                [ ${#tasks[@]} -gt 0 ] && moveSelection calendarIndex calendarOffset "${#tasks[@]}" 1
                 ;;
-            $'\e[D') calendarDate=$(date -d "$calendarDate - 1 day" +%Y-%m-%d) ;;
-            $'\e[C') calendarDate=$(date -d "$calendarDate + 1 day" +%Y-%m-%d) ;;
+            $'\e[D')
+                calendarDate=$(date -d "$calendarDate - 1 day" +%Y-%m-%d)
+                calendarIndex=0
+                ;;
+            $'\e[C')
+                calendarDate=$(date -d "$calendarDate + 1 day" +%Y-%m-%d)
+                calendarIndex=0
+                ;;
             n) newTask ;;
             d) deleteTask ;;
             b) mode="browse"; return ;;
