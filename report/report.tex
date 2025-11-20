@@ -1,0 +1,555 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage{amsmath, amssymb}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{setspace}
+\usepackage{float}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning}
+\graphicspath{{assets/}}
+
+%title page
+\geometry{margin=1in}
+
+\begin{document}
+
+% Title Page
+\begin{titlepage}
+    \centering
+        
+    \Huge
+    \textbf{Jaypee Institute of Information Technology, Sector - 62, Noida } \\
+    \vspace{0.5cm}
+    \Large
+    \textbf{B.Tech CSE III Semester}\\
+    \vspace{1cm}
+    \vspace*{\fill}
+        
+    \includegraphics[scale=0.2]{jiit_logo}\\
+        
+    \vspace{1.5cm}
+    \Huge
+    \textbf{Unix Lab PBL Report}\\
+    \Large
+        
+    \textbf{TUI Notes Manager}\\
+    \vspace{1cm}
+    
+    \Large
+    \textbf{Submitted to}\\
+    Dr. Amarjeet Kaur\\
+    Dr. Amit Mishra\\
+    Dr. Meenal\\[1cm]
+    
+    \textbf{Submitted by}
+    \vspace{0.5cm}
+    
+    \begin{tabular}{lll}
+        Harsh Sharma      & 2401030232 & B5 \\
+        Karvy Singh       & 2401030234 & B5 \\
+        Rudra Kumar Singh & 2401030237 & B5 \\
+    \end{tabular}
+    
+    \vspace*{\fill}
+    \normalsize
+\end{titlepage}
+
+%letter of transmittal 
+\begin{center}
+    \Large\textbf{Letter of Transmittal}
+\end{center}
+\vspace{1cm}
+
+\noindent
+\textbf{Dr. Amarjeet Kaur}\\
+\textbf{Dr. Amit Mishra}\\
+\textbf{Dr. Meenal}\\[0.5em]
+Department of Computer Science \& IT\\
+[0.5em]
+
+\vspace{1cm}
+
+\noindent
+\textbf{Subject:} Submission of Project ``TUI Notes Manager''
+
+\vspace{1cm}
+
+\noindent
+Respected Madam/Sir,
+
+\vspace{1em}
+
+\noindent
+We are pleased to submit our project titled \textit{``TUI Notes Manager''} as part of the Unix Laboratory course. This report documents the motivation, design, implementation details, and learning outcomes of the project.
+
+\vspace{1em}
+
+\noindent
+We have endeavoured to cover all the major Unix concepts taught in the lab, including shell scripting, text processing utilities, pipes and redirection, signal handling with traps, terminal control, colour handling using \texttt{tput}, and job scheduling with both \texttt{crontab} and the \texttt{at} command. The project integrates these concepts into a practical Text User Interface (TUI) application for managing notes and reminders.
+
+\vspace{1em}
+
+\noindent
+Thank you for your guidance and the opportunity to work on this project.
+
+\vspace{2em}
+
+\noindent
+Sincerely, \\[2em]
+
+\noindent
+Harsh Sharma (2401030232)\\
+Karvy Singh (2401030234)\\
+Rudra Kumar Singh (2401030237)\\
+
+\vspace{2cm}
+
+\noindent
+Date: \today
+
+\newpage
+
+\tableofcontents
+
+\newpage
+
+\section{Introduction}
+
+In day-to-day academic work, students frequently need to maintain small text notes such as to-do lists, code snippets, ideas, and reminders. Most existing solutions are graphical or web based and may be heavy-weight for quick usage from a Unix terminal environment.
+
+The \textbf{TUI Notes Manager} is a shell-script-based terminal application that allows users to create, browse, search, and edit notes, as well as schedule reminder notifications using either \texttt{crontab} (for repeating tasks) or the \texttt{at} command (for one-off tasks). The entire application is implemented as a single Bash script (\texttt{notes.sh}) and operates inside a full-screen TUI, making it convenient for users who primarily work in the terminal.
+
+From an academic perspective, this project is designed to showcase key Unix and shell programming concepts introduced in the Unix Lab:
+
+\begin{itemize}
+    \item Shell scripting and modular functions.
+    \item Pipes and input/output redirection.
+    \item Usage of standard Unix text processing tools such as \texttt{grep}, \texttt{sed}, and \texttt{cal}.
+    \item Terminal handling using \texttt{tput}, including alternate screen buffers, cursor control, and colours.
+    \item Signal handling using \texttt{trap} (for \texttt{EXIT} and \texttt{WINCH}).
+    \item Persistent background scheduling using \texttt{crontab} for repeating reminders.
+    \item Non-repetitive reminders scheduled using the \texttt{at} command.
+\end{itemize}
+
+\section{Problem Statement and Objectives}
+
+The goal of the project is to design and implement a lightweight notes manager that runs entirely in a Unix terminal and meets the following objectives:
+
+\begin{enumerate}
+    \item Provide a user-friendly TUI for listing, viewing, and editing notes stored as plain text files in a dedicated directory (\texttt{\$HOME/notes}).
+    \item Allow quick creation, renaming, and deletion of notes using simple keyboard shortcuts.
+    \item Support fast searching across all notes using \texttt{grep}, with interactive navigation of search results.
+    \item Integrate a calendar view to navigate dates and attach tasks/reminders to specific days.
+    \item Use \texttt{crontab} to schedule repeating reminder notifications at specified dates and times.
+    \item Use the \texttt{at} command to schedule non-repeating reminders.
+    \item Demonstrate robust Unix shell scripting practices such as \texttt{set -euo pipefail}, traps for cleanup and window resizing, safe handling of user input, and graceful fallback when colours are not supported.
+\end{enumerate}
+
+\section{Software Requirements}
+
+\begin{itemize}
+    \item Unix-like operating system (GNU/Linux recommended).
+    \item Bash shell (the script uses Bash-specific features).
+    \item A terminal emulator supporting ANSI escape codes and colours.
+    \item A text editor such as \texttt{nvim}, \texttt{vim}, or \texttt{vi}.
+    \item \texttt{tput} (from \texttt{ncurses}) for terminal capability queries and colour handling.
+    \item \texttt{crontab} for scheduling repeating tasks.
+    \item \texttt{at} for scheduling single-run, non-repeating tasks.
+    \item \texttt{notify-send} (freedesktop notifications) for desktop alerts.
+    \item Standard Unix utilities: \texttt{grep}, \texttt{sed}, \texttt{tput}, \texttt{cal}, \texttt{id}, and \texttt{date}.
+\end{itemize}
+
+\section{System Design}
+
+\subsection{Overall Architecture}
+
+The TUI Notes Manager is implemented as a single Bash script, \texttt{notes.sh}. The script is logically divided into the following components:
+
+\begin{itemize}
+    \item \textbf{Initialization}: Setting shell options, preparing directories, selecting the text editor, and configuring terminal settings.
+    \item \textbf{Colour Setup}: Detecting terminal colour capabilities with \texttt{tput colors} and initialising colour variables for titles, status lines, previews, and selections, with automatic fallback to monochrome if colours are unavailable.
+    \item \textbf{Layout and Rendering}: Computing terminal dimensions and drawing panels using \texttt{tput}.
+    \item \textbf{Modes of Operation}: Three main modes---\emph{browse}, \emph{search}, and \emph{calendar}---each managed by its own event loop.
+    \item \textbf{Note Management}: Functions to list, create, rename, delete, and preview note files.
+    \item \textbf{Search and Filtering}: Running \texttt{grep} recursively to search within notes and displaying matching files.
+    \item \textbf{Reminder Management}: Functions to list, add, and delete tasks that are stored either as \texttt{crontab} entries (for repeating tasks) or as \texttt{at} jobs (for one-off tasks).
+    \item \textbf{Signal Handling and Cleanup}: Traps for restoring the terminal state and handling window resize events.
+\end{itemize}
+
+\subsection{Data and File Layout}
+
+\begin{itemize}
+    \item All notes are stored as plain text files in a directory:
+    \begin{center}
+        \texttt{\$HOME/notes}
+    \end{center}
+    \item Filenames are generated from user-provided titles by the \texttt{slugify} function, which:
+    \begin{itemize}
+        \item Converts letters to lowercase.
+        \item Replaces non-alphanumeric characters with hyphens.
+        \item Ensures there is always a non-empty slug (default \texttt{note}).
+    \end{itemize}
+    \item A separate directory is used to cache metadata:
+    \begin{center}
+        \texttt{\$HOME/.local/state/notes}
+    \end{center}
+    which stores the currently edited note path.
+    \item Tasks and reminders share a common textual marker of the form:
+    \begin{center}
+        \texttt{\# TASK:YYYY-MM-DD:Task description}
+    \end{center}
+    \begin{itemize}
+        \item For repeating tasks, this marker appears in the user's \texttt{crontab} lines.
+        \item For one-off tasks, the marker appears inside the job body scheduled with \texttt{at}.
+    \end{itemize}
+    This unified marker allows the script to present both kinds of tasks together in the calendar view.
+\end{itemize}
+
+\subsection{User Interaction Flow}
+
+The high-level flow of the program is shown in Figure~\ref{fig:flowchart}. It starts by initialising the environment, then enters the alternate screen and main loop. Depending on the current mode, key presses invoke different actions such as browsing notes, searching, or managing tasks (including choosing between repeating and one-off reminders). On exit, the terminal is restored to its original state.
+
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}[
+        node distance=1.3cm and 3.0cm,
+        >=Stealth,
+        every node/.style={font=\small},
+        startstop/.style={rectangle, rounded corners, draw,
+                          minimum width=3cm, minimum height=0.9cm,
+                          align=center},
+        process/.style={rectangle, draw,
+                        minimum width=4cm, minimum height=0.9cm,
+                        align=center},
+        decision/.style={diamond, draw, aspect=2,
+                         inner sep=1pt, align=center},
+        arrow/.style={->, thick}
+    ]
+
+        % Top linear setup
+        \node[startstop] (start) {Start};
+
+        \node[process, below=of start] (init) {Set options, init dirs,\\select editor};
+
+        \node[process, below=of init] (screen) {Enter alternate screen,\\hide cursor};
+
+        \node[process, below=of screen] (layout) {Compute layout, load notes};
+
+        \node[process, below=of layout] (setmode) {Set \texttt{mode = "browse"}};
+
+        \node[decision, below=of setmode, yshift=-0.2cm] (whichmode)
+            {Current \texttt{mode}?};
+
+        % Mode-specific loops in three columns
+        \node[process, below left=1.6cm and 3.4cm of whichmode] (loopbrowse)
+            {Run browse loop\\(list notes, preview, edit,\\handle \texttt{/}, \texttt{c}, \texttt{q})};
+
+        \node[process, below=1.6cm of whichmode] (loopsearch)
+            {Run search loop\\(grep notes, navigate matches,\\handle \texttt{b}, \texttt{q})};
+
+        \node[process, below right=1.6cm and 3.4cm of whichmode] (loopcal)
+            {Run calendar loop\\(show calendar, tasks,\\schedule via \texttt{crontab/at})};
+
+        % Quit check and end
+        \node[decision, below=2.4cm of loopsearch] (modequit)
+            {\texttt{mode == "quit"}?};
+
+        \node[startstop, below=of modequit] (end)
+            {Restore terminal,\\exit};
+
+        % Straight arrows (top part)
+        \draw[arrow] (start) -- (init);
+        \draw[arrow] (init) -- (screen);
+        \draw[arrow] (screen) -- (layout);
+        \draw[arrow] (layout) -- (setmode);
+        \draw[arrow] (setmode) -- (whichmode);
+
+        % Branch from mode decision to each loop (orthogonal paths)
+        \draw[arrow] (whichmode.west) |- node[near start, left]{browse} (loopbrowse.north);
+        \draw[arrow] (whichmode.south) -- node[right]{search} (loopsearch.north);
+        \draw[arrow] (whichmode.east) |- node[near start, right]{calendar} (loopcal.north);
+
+        % From loops down to quit decision (orthogonal, non-overlapping)
+        \draw[arrow] (loopbrowse.south) |- (modequit.west);
+        \draw[arrow] (loopsearch.south) -- (modequit.north);
+        \draw[arrow] (loopcal.south) |- (modequit.east);
+
+        % Quit decision
+        \draw[arrow] (modequit.south) -- node[right]{yes} (end);
+        \draw[arrow] (modequit.west) -- ++(-2.8,0)
+                     |- node[pos=0.25, below]{no} (whichmode.south);
+
+    \end{tikzpicture}
+    \caption{High-level control flow of the TUI Notes Manager}
+    \label{fig:flowchart}
+\end{figure}
+
+\section{Implementation Details}
+
+\subsection{Shell Options and Initialization}
+
+The script begins with:
+
+\begin{itemize}
+    \item \texttt{\#!/bin/bash} to ensure Bash is used.
+    \item \texttt{set -euo pipefail} to enable strict error handling:
+    \begin{itemize}
+        \item \texttt{-e} stops execution on errors.
+        \item \texttt{-u} treats unset variables as errors.
+        \item \texttt{pipefail} ensures pipeline failures are detected.
+    \end{itemize}
+\end{itemize}
+
+The notes directory is prepared using:
+
+\begin{center}
+\texttt{notesDir="\$HOME/notes"}\\
+\texttt{mkdir -p "\$notesDir"}
+\end{center}
+
+The script selects an editor based on the \texttt{EDITOR} environment variable and falls back to \texttt{nvim}, \texttt{vim}, or \texttt{vi} using \texttt{command -v}.
+
+A cache directory at \texttt{\$HOME/.local/state/notes} stores the path of the currently open note.
+
+\subsection{Terminal Handling, Colours, and Layout}
+
+The script uses \texttt{tput} to control cursor visibility, clear the screen, query colour capabilities, and compute terminal dimensions:
+
+\begin{itemize}
+    \item \texttt{tput cols}, \texttt{tput lines} to get width and height.
+    \item \texttt{tput colors} to detect whether the terminal supports colours and how many.
+    \item Alternate screen buffer is enabled with \texttt{ESC[?1049h} and disabled with \texttt{ESC[?1049l}.
+    \item The cursor is hidden during TUI operation and restored on exit.
+\end{itemize}
+
+When colours are available (at least 8), the script defines colour variables using \texttt{tput setaf} and \texttt{tput setab} for:
+
+\begin{itemize}
+    \item Panel titles (cyan, bold).
+    \item Status bar (green foreground).
+    \item Preview text (distinct colour).
+    \item Selection highlighting (blue background with white foreground).
+\end{itemize}
+
+If colours are not supported, the script falls back to monochrome attributes such as \texttt{tput bold} and \texttt{tput rev}.
+
+The screen is divided into two panels:
+
+\begin{itemize}
+    \item Left panel: list of notes or search results.
+    \item Right panel: preview of the selected note or tasks for the selected date.
+\end{itemize}
+
+The \texttt{layoutDim} function computes the dimensions of these panels dynamically based on terminal size.
+
+\subsection{Mode Management}
+
+The global variable \texttt{mode} controls which event loop is active. Possible values are:
+
+\begin{itemize}
+    \item \texttt{"browse"}: default mode for listing and editing notes.
+    \item \texttt{"search"}: search results navigation mode.
+    \item \texttt{"calendar"}: calendar and task management mode.
+    \item \texttt{"quit"}: signals that the main loop should terminate.
+\end{itemize}
+
+Each mode has its own loop function:
+
+\begin{itemize}
+    \item \texttt{loop\_browse}
+    \item \texttt{loop\_search}
+    \item \texttt{loop\_calendar}
+\end{itemize}
+
+The main loop repeatedly calls the appropriate function until \texttt{mode = "quit"}.
+
+\subsection{Key Input and Navigation}
+
+The script reads raw key input using a custom \texttt{read\_key} function that handles escape sequences for arrow keys:
+
+\begin{itemize}
+    \item Up/Down arrows or \texttt{k}/\texttt{j} move the selection.
+    \item Page up/down sequences scroll faster in the notes list.
+    \item \texttt{e} or Enter edits the current note.
+    \item \texttt{n} creates a new note or task (depending on mode).
+    \item \texttt{r} renames a note.
+    \item \texttt{d} deletes a note or task.
+    \item \texttt{/} initiates search.
+    \item \texttt{c} switches to calendar mode.
+    \item \texttt{b} returns from search or calendar to browse mode.
+    \item \texttt{q} quits the application.
+\end{itemize}
+
+The helper function \texttt{moveSelection} ensures that navigation wraps around and keeps the selected item within the visible window.
+
+\subsection{Note Management}
+
+The \texttt{list\_files} function lists all note files in reverse chronological order using \texttt{ls -t}. The filenames are stored in the \texttt{presentFiles} array using \texttt{mapfile}.
+
+Key operations:
+
+\begin{itemize}
+    \item \textbf{New note} (\texttt{newNote}):
+    \begin{itemize}
+        \item Prompts for a title.
+        \item Generates a slug using \texttt{slugify}.
+        \item Opens the corresponding file in the editor.
+    \end{itemize}
+    \item \textbf{Rename note} (\texttt{renameNote}): prompts for a new title and renames the file.
+    \item \textbf{Delete note} (\texttt{deleteNote}): confirms with the user and removes the file.
+    \item \textbf{Edit note} (\texttt{openEditor}): temporarily leaves the alternate screen, launches the editor, and then restores the TUI.
+\end{itemize}
+
+For previewing, the script uses:
+
+\begin{center}
+\texttt{sed -n '1,200p'}
+\end{center}
+
+to show the first few lines of the selected note, rendered within the right-hand panel, using a dedicated preview colour when available.
+
+\subsection{Search Implementation}
+
+When the user presses \texttt{/}, the script reads a search query and calls \texttt{runSearch}:
+
+\begin{itemize}
+    \item \texttt{grep -RIn} is used to search recursively within the notes directory.
+    \item Each matching line is parsed to extract the filename and snippet.
+    \item Results are stored in \texttt{searchedFiles} and \texttt{searchedSnips} arrays.
+\end{itemize}
+
+The search mode displays the list of matching files on the left and a preview of the selected file on the right. Pressing \texttt{e} or Enter opens the currently selected match for editing.
+
+\subsection{Calendar and Reminder Management}
+
+The calendar view uses the \texttt{cal} command to render a monthly calendar. The current day in \texttt{calendarDate} is highlighted using reverse video attributes.
+
+The \texttt{list\_tasks} function aggregates both repeating and one-off tasks:
+
+\begin{itemize}
+    \item Cron-based tasks are obtained from \texttt{crontab -l} and filtered by the date-specific marker \texttt{\# TASK:YYYY-MM-DD:}.
+    \item One-off tasks are discovered using \texttt{atq}. For each job ID, the script inspects the job body with \texttt{at -c} and looks for the same marker.
+    \item Each task is tagged with a prefix indicating its origin (\texttt{cron} or \texttt{at}) so that deletion can be handled correctly.
+\end{itemize}
+
+When creating a new task, \texttt{newTask}:
+
+\begin{enumerate}
+    \item Prompts the user for the task description.
+    \item Prompts for the time (HH:MM).
+    \item Asks whether the task is repetitive.
+    \item If the user chooses a repeating task, the script appends a suitable line to the user's \texttt{crontab}, including the \texttt{notify-send} command and the \texttt{\# TASK:...} marker.
+    \item If the user chooses a one-off task, the script constructs a combined date/time string, validates it, and pipes a \texttt{notify-send} command with the marker into \texttt{at -t}.
+\end{enumerate}
+
+The \texttt{deleteTask} function handles both kinds of tasks:
+
+\begin{itemize}
+    \item For cron tasks, the relevant line is removed from \texttt{crontab}.
+    \item For at-based tasks, the corresponding job is removed using \texttt{at -d} or \texttt{atrm}.
+\end{itemize}
+
+This design demonstrates real-world usage of \texttt{crontab}, \texttt{at}, environment variables like \texttt{XDG\_RUNTIME\_DIR} and \texttt{DBUS\_SESSION\_BUS\_ADDRESS}, and interaction with the desktop notification system.
+
+\subsection{Signal Handling and Robustness}
+
+The script uses \texttt{trap} to handle important signals:
+
+\begin{itemize}
+    \item \texttt{trap 'on\_exit' EXIT}: ensures that the alternate screen is disabled and the cursor is restored even if the script exits unexpectedly.
+    \item \texttt{trap 'resize' WINCH}: handles terminal window resize events by recomputing layout dimensions and forcing a redraw.
+\end{itemize}
+
+These traps improve user experience and maintain terminal integrity.
+
+In addition, the script safely handles user input:
+
+\begin{itemize}
+    \item Temporarily enabling echo with \texttt{stty echo} while reading titles, queries, or task descriptions.
+    \item Restoring previous terminal settings after input.
+\end{itemize}
+
+\section{Unix Concepts Demonstrated}
+
+\subsection{Shell Scripting and Modular Design}
+
+The project makes extensive use of functions, global state variables, and arrays. It demonstrates:
+
+\begin{itemize}
+    \item Function definitions and reuse.
+    \item Global variables for managing state.
+    \item Arrays with \texttt{mapfile} and indexed access.
+\end{itemize}
+
+\subsection{Pipes and I/O Redirection}
+
+The script uses pipes and redirection in several places:
+
+\begin{itemize}
+    \item \texttt{list\_files} uses \texttt{ls} piped into a \texttt{while read} loop.
+    \item \texttt{runSearch} uses \texttt{grep -RIn} piped into a parser.
+    \item \texttt{crontab -l 2>/dev/null | grep ...} to filter tasks.
+    \item Inspection of \texttt{at} jobs is done by piping the output of \texttt{at -c} into \texttt{grep}.
+\end{itemize}
+
+\subsection{Text Processing Utilities}
+
+The project uses Unix text processing commands:
+
+\begin{itemize}
+    \item \texttt{grep} for search and filtering.
+    \item \texttt{sed} for preview and text substitution (for highlighting the current day in the calendar).
+    \item \texttt{tr} and \texttt{sed} in \texttt{slugify} for generating filenames.
+\end{itemize}
+
+\subsection{Terminal Control and Colour Handling}
+
+Using \texttt{tput}, the script:
+
+\begin{itemize}
+    \item Moves the cursor to arbitrary positions with \texttt{tput cup}.
+    \item Clears specific lines or the whole screen.
+    \item Configures text attributes such as bold and reverse video.
+    \item Queries terminal colour support and sets foreground and background colours for different UI elements.
+\end{itemize}
+
+The application also falls back gracefully to monochrome where colour is not available, improving portability.
+
+\subsection{Signal Handling with \texttt{trap}}
+
+Signals are used to:
+
+\begin{itemize}
+    \item Cleanly restore the terminal when the script exits.
+    \item Respond to window size changes without restarting the program.
+\end{itemize}
+
+\subsection{Job Scheduling with \texttt{crontab} and \texttt{at}}
+
+The calendar mode shows a practical application of both \texttt{crontab} and \texttt{at}:
+
+\begin{itemize}
+    \item Programmatically adding cron entries for repeating tasks.
+    \item Scheduling one-off notifications with \texttt{at -t}.
+    \item Parsing and deleting specific entries or jobs.
+    \item Using comments as structured metadata to associate each job with a date and description.
+\end{itemize}
+
+
+\section{Conclusion}
+
+The TUI Notes Manager project successfully demonstrates how Unix and shell scripting concepts can be combined to create a practical and user-friendly terminal application. By integrating note management, full-screen TUI rendering, search functionality, a calendar, and reminder scheduling via both \texttt{crontab} and \texttt{at}, the project reflects the core topics of the Unix Lab.
+
+Beyond fulfilling academic objectives, the tool is genuinely useful for everyday workflow, especially for users who prefer staying within the terminal. The project strengthened our understanding of Bash scripting, Unix utilities, terminal handling, colour control, and background job scheduling, and provided experience in designing and debugging interactive command-line applications.
+
+\section*{References}
+
+\begin{itemize}
+    \item \textit{Bash Reference Manual}, GNU Project.
+    \item Linux manual pages: \texttt{bash(1)}, \texttt{grep(1)}, \texttt{sed(1)}, \texttt{tput(1)}, \texttt{crontab(1)}, \texttt{at(1)}, \texttt{notify-send(1)}, \texttt{cal(1)}.
+    \item \textit{Advanced Bash-Scripting Guide}, The Linux Documentation Project.
+\end{itemize}
+
+\end{document}
