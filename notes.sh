@@ -25,6 +25,36 @@ current="$cachedNote/current_note"
 columns=$(tput cols)
 lines=$(tput lines)
 
+# ----- Color support -----
+if tput colors >/dev/null 2>&1; then
+    color_count=$(tput colors)
+else
+    color_count=0
+fi
+
+if [ "$color_count" -ge 8 ]; then
+    COLOR_RESET=$(tput sgr0)
+    COLOR_BOLD=$(tput bold)
+    COLOR_DIM=$(tput dim)
+    COLOR_TITLE=$(tput setaf 6)      # cyan
+    COLOR_STATUS=$(tput setaf 2)     # green-ish status line
+    COLOR_ACCENT=$(tput setaf 4)     # blue accent if needed
+    COLOR_PREVIEW=$(tput setaf 3)    # preview text color
+    COLOR_SELECTION_BG=$(tput setab 4)  # blue background for selection
+    COLOR_SELECTION_FG=$(tput setaf 7)  # white foreground for selection
+else
+    COLOR_RESET=""
+    COLOR_BOLD=""
+    COLOR_DIM=""
+    COLOR_TITLE=""
+    COLOR_STATUS=""
+    COLOR_ACCENT=""
+    COLOR_PREVIEW=""
+    COLOR_SELECTION_BG=""
+    COLOR_SELECTION_FG=""
+fi
+# --------------------------
+
 alt_screen_on(){
     printf '\e[?1049h'
     tput civis
@@ -124,17 +154,31 @@ layoutDim() {
 partitionH() {
     local y=$1
     move 0 "$y"
-    for ((i=0; i < columns; i++)); do 
-        echo -n "─"
+    if [ -n "$COLOR_DIM" ]; then
+        printf '%s' "$COLOR_DIM"
+    fi
+    for ((i=0; i < columns; i++)); do
+        printf '─'
     done
+    if [ -n "$COLOR_RESET" ]; then
+        printf '%s' "$COLOR_RESET"
+    fi
 }
 
 panel_title() {
     local x=$1 y=$2 w=$3 title=$4
     move "$x" "$y"
-    tput bold
+    if [ -n "$COLOR_TITLE" ]; then
+        printf '%s%s' "$COLOR_TITLE" "$COLOR_BOLD"
+    else
+        tput bold
+    fi
     printf ' %s ' "$title"
-    tput sgr0
+    if [ -n "$COLOR_RESET" ]; then
+        printf '%s' "$COLOR_RESET"
+    else
+        tput sgr0
+    fi
 }
 
 renderSidePane() {
@@ -149,10 +193,23 @@ renderSidePane() {
         printf '%-*s' "$leftWidth" ' '
         if (( i < n )); then
             move 0 "$y"
-            if (( i == browseIndex )); then tput rev; fi #reverse vid; for highlighting.
-            local basename_file=$(basename "${presentFiles[i]}")
+            if (( i == browseIndex )); then
+                if [ -n "$COLOR_SELECTION_BG" ]; then
+                    printf '%s%s' "$COLOR_SELECTION_BG" "$COLOR_SELECTION_FG"
+                else
+                    tput rev
+                fi
+            fi
+            local basename_file
+            basename_file=$(basename "${presentFiles[i]}")
             printf ' %-*.*s' "$((leftWidth-2))" "$((leftWidth-2))" "$basename_file"
-            if (( i == browseIndex )); then tput sgr0; fi
+            if (( i == browseIndex )); then
+                if [ -n "$COLOR_RESET" ]; then
+                    printf '%s' "$COLOR_RESET"
+                else
+                    tput sgr0
+                fi
+            fi
         fi
     done
 }
@@ -167,7 +224,13 @@ renderPreview() {
 
     if [ ${#presentFiles[@]} -eq 0 ]; then
         move "$leftWidth" 1
+        if [ -n "$COLOR_DIM" ]; then
+            printf '%s' "$COLOR_DIM"
+        fi
         printf ' No notes yet. Press [n] to create one.'
+        if [ -n "$COLOR_RESET" ]; then
+            printf '%s' "$COLOR_RESET"
+        fi
         return
     fi
 
@@ -176,15 +239,21 @@ renderPreview() {
 
     local content
     if [ -f "$file" ]; then
-        content="$("${preview[@]}" "$file" 2>/dev/null | sed "${previewHeight}q")"  #quit sed after those certain number of lines.
+        content="$("${preview[@]}" "$file" 2>/dev/null | sed "${previewHeight}q")"
     else
         content="(no file)"
     fi
 
     local line=1
-    while IFS= read -r l && (( line < previewHeight )); do  #internal feild seperator, bash used to sep on basis of \n \t, set to nothing to perserve all user data as is
+    while IFS= read -r l && (( line < previewHeight )); do
         move "$leftWidth" "$line"
+        if [ -n "$COLOR_PREVIEW" ]; then
+            printf '%s' "$COLOR_PREVIEW"
+        fi
         printf '%-*.*s' "$previewWidth" "$previewWidth" "${l//$'\t'/    }"
+        if [ -n "$COLOR_RESET" ]; then
+            printf '%s' "$COLOR_RESET"
+        fi
         line=$((line+1))
     done <<< "$content"
 }
@@ -193,29 +262,39 @@ renderStatus() {
     partitionH $((lines-2))
     move 0 $((lines-1))
     
+    if [ -n "$COLOR_STATUS" ]; then
+        printf '%s' "$COLOR_STATUS"
+    fi
+
     if [ -n "$status" ]; then
-        # truncate status to fit within terminal width minus padding
         local max_len=$((columns - 2))
         local trunc="${status:0:$max_len}"
         printf '%-*.*s' "$columns" "$columns" " $trunc"
     else
-        local base_msg=' [Enter/e] Edit  [n] New  [r] Rename  [d] Delete  [/] Search  [q] Quit  | Dir: '
+        local base_msg=' [Enter/e] Edit  [n] New  [r] Rename  [d] Delete  [/] Search  [c] Calendar  [q] Quit  | Dir: '
         local max_dir_len=$((columns - ${#base_msg} - 2))
         if (( max_dir_len > 0 )); then
             local dir_trunc="${notesDir:0:$max_dir_len}"
             printf '%-*.*s' "$columns" "$columns" "${base_msg}${dir_trunc}"
         else
-            printf '%-*.*s' "$columns" "$columns" " [e]Edit [n]New [r]Rename [d]Del [/]Search [q]Quit"
+            printf '%-*.*s' "$columns" "$columns" " [e]Edit [n]New [r]Rename [d]Del [/]Search [c]Cal [q]Quit"
         fi
+    fi
+
+    if [ -n "$COLOR_RESET" ]; then
+        printf '%s' "$COLOR_RESET"
     fi
 }
 
 renderSearchStatus() {
     partitionH $((lines-2))
     move 0 $((lines-1))
+
+    if [ -n "$COLOR_STATUS" ]; then
+        printf '%s' "$COLOR_STATUS"
+    fi
     
     if [ -n "$status" ]; then
-        # truncate status to fit within terminal width minus padding
         local max_len=$((columns - 2))
         local trunc="${status:0:$max_len}"
         printf '%-*.*s' "$columns" "$columns" " $trunc"
@@ -229,6 +308,10 @@ renderSearchStatus() {
         else
             printf '%-*.*s' "$columns" "$columns" "[enter/e]Edit [b]Browse [q]Quit"
         fi
+    fi
+
+    if [ -n "$COLOR_RESET" ]; then
+        printf '%s' "$COLOR_RESET"
     fi
 }
 
@@ -244,10 +327,23 @@ renderSearchList() {
         printf '%-*s' "$leftWidth" ' '
         if (( i < n )); then
             move 0 "$y"
-            if (( i == searchIndex )); then tput rev; fi #reverse vid; for highlighting.
-            local basename_file=$(basename "${searchedFiles[i]}")
+            if (( i == searchIndex )); then
+                if [ -n "$COLOR_SELECTION_BG" ]; then
+                    printf '%s%s' "$COLOR_SELECTION_BG" "$COLOR_SELECTION_FG"
+                else
+                    tput rev
+                fi
+            fi
+            local basename_file
+            basename_file=$(basename "${searchedFiles[i]}")
             printf ' %-*.*s' "$((leftWidth-2))" "$((leftWidth-2))" "$basename_file"
-            if (( i == searchIndex )); then tput sgr0; fi
+            if (( i == searchIndex )); then
+                if [ -n "$COLOR_RESET" ]; then
+                    printf '%s' "$COLOR_RESET"
+                else
+                    tput sgr0
+                fi
+            fi
         fi
     done
 }
@@ -264,7 +360,13 @@ renderSearchPreview() {
 
     if [ ${#searchedFiles[@]} -eq 0 ]; then
         move "$leftWidth" 1
+        if [ -n "$COLOR_DIM" ]; then
+            printf '%s' "$COLOR_DIM"
+        fi
         printf ' No results found.'
+        if [ -n "$COLOR_RESET" ]; then
+            printf '%s' "$COLOR_RESET"
+        fi
         return
     fi
 
@@ -278,7 +380,13 @@ renderSearchPreview() {
     local line=1
     while IFS= read -r l && (( line < previewHeight )); do
         move "$leftWidth" "$line"
+        if [ -n "$COLOR_PREVIEW" ]; then
+            printf '%s' "$COLOR_PREVIEW"
+        fi
         printf '%-*.*s' "$previewWidth" "$previewWidth" "${l//$'\t'/    }"
+        if [ -n "$COLOR_RESET" ]; then
+            printf '%s' "$COLOR_RESET"
+        fi
         line=$((line+1))
     done <<< "$content"
 }
@@ -286,22 +394,23 @@ renderSearchPreview() {
 renderCalendar() {
     panel_title 0 0 "$leftWidth" "Calendar"
 
-    local day=$(date -d "$calendarDate" +%d)
-    local month=$(date -d "$calendarDate" +%m)
-    local year=$(date -d "$calendarDate" +%Y)
+    local day
+    day=$(date -d "$calendarDate" +%d)
+    local month
+    month=$(date -d "$calendarDate" +%m)
+    local year
+    year=$(date -d "$calendarDate" +%Y)
 
-    local cal_output=$(cal $month $year)
-    local day_no_zero=$((10#$day)) # converts the day to a number like 05 be 5 now for correct matching, 10# means using 10 base
+    local cal_output
+    cal_output=$(cal "$month" "$year")
+    local day_no_zero=$((10#$day))
 
     local line=1
     while IFS= read -r l && (( line < listHeight )); do
         move 0 "$line"
-
-        #pattern for finding space date space OR space date nothing OR nothing date space
         if echo "$l" | grep -qE "(^| )$day_no_zero( |$)"; then
             l=$(echo "$l" | sed "s/\<$day_no_zero\>/$(tput rev)$day_no_zero$(tput sgr0)/")
         fi
-
         printf '%-*s' "$leftWidth" "$l"
         line=$((line+1))
     done<<<"$cal_output"
@@ -320,7 +429,13 @@ renderTasks() {
 
     if [ ${#tasks[@]} -eq 0 ]; then
         move "$leftWidth" 1
+        if [ -n "$COLOR_DIM" ]; then
+            printf '%s' "$COLOR_DIM"
+        fi
         printf ' No tasks. Press [n] to add.'
+        if [ -n "$COLOR_RESET" ]; then
+            printf '%s' "$COLOR_RESET"
+        fi
         return
     fi
 
@@ -328,10 +443,35 @@ renderTasks() {
     for task in "${tasks[@]}"; do
         [ $line -ge $previewHeight ] && break
         move "$leftWidth" "$line"
-        if (( line-1 == calendarIndex )); then tput rev; fi
-        local display="${task#*\# TASK:*:}"
+
+        local kind jobid taskline src_line display
+        IFS='|' read -r kind jobid taskline <<< "$task"
+
+        if [ "$kind" = "cron" ]; then
+            src_line="$jobid"
+        elif [ "$kind" = "at" ]; then
+            src_line="$taskline"
+        else
+            src_line="$task"
+        fi
+
+        display="${src_line#*\# TASK:*:}"
+
+        if (( line-1 == calendarIndex )); then
+            if [ -n "$COLOR_SELECTION_BG" ]; then
+                printf '%s%s' "$COLOR_SELECTION_BG" "$COLOR_SELECTION_FG"
+            else
+                tput rev
+            fi
+        fi
         printf ' %-*.*s' "$((previewWidth-2))" "$((previewWidth-2))" "$display"
-        if (( line-1 == calendarIndex )); then tput sgr0; fi
+        if (( line-1 == calendarIndex )); then
+            if [ -n "$COLOR_RESET" ]; then
+                printf '%s' "$COLOR_RESET"
+            else
+                tput sgr0
+            fi
+        fi
         line=$((line+1))
     done
 }
@@ -339,14 +479,22 @@ renderTasks() {
 renderCalendarStatus() {
     partitionH $((lines-2))
     move 0 $((lines-1))
+
+    if [ -n "$COLOR_STATUS" ]; then
+        printf '%s' "$COLOR_STATUS"
+    fi
     
     if [ -n "$status" ]; then
         local max_len=$((columns - 2))
         local trunc="${status:0:$max_len}"
         printf '%-*.*s' "$columns" "$columns" " $trunc"
     else
-        local msg=' [←→] Change Day  [n] New Task  [d] Delete  [b] Browse  [q] Quit'
+        local msg=' [←→] Change Day  [↑/↓] Select Task  [n] New Task  [d] Delete  [b] Browse  [q] Quit'
         printf '%-*.*s' "$columns" "$columns" "$msg"
+    fi
+
+    if [ -n "$COLOR_RESET" ]; then
+        printf '%s' "$COLOR_RESET"
     fi
 }
 
@@ -356,7 +504,7 @@ runSearch() {
     searchedSnips=()
 
     if [ -z "$query" ]; then
-        set_status "Aborted Search";
+        set_status "Aborted Search"
         mode="browse"
     fi
 
@@ -408,11 +556,10 @@ draw_all() {
     esac
 }
 
-# to read functions like arrow keys etc.
 read_key() {
     IFS= read -rsn1 key || return 1
     case "$key" in
-        $'\e') #esc seq check
+        $'\e')
             IFS= read -rsn2 -t 0.001 rest || rest=""
             key+="$rest"
             ;;
@@ -424,20 +571,19 @@ moveSelection() {
     local -n idx=$1
     local -n off=$2
     local max=$3
-    local delta=$4 #this is to determine the movement of selection up or down
+    local delta=$4
 
     if ((max<=0)); then
         return
     fi
 
-    #clamping for proper val
     idx=$(( idx + delta ))
     if (( idx<0 )); then
         idx=$((max-1))
     elif (( idx>=max )); then
         idx=0
     fi
-    # keep within window
+
     if (( idx < off )); then
         off=$idx
     fi
@@ -474,14 +620,14 @@ newNote() {
     slug=$(slugify "$title")
     local file="$notesDir/${slug}.txt"
     alt_screen_off
-    $editor $file
+    $editor "$file"
     alt_screen_on
 
     tput clear
     refresh
     browseIndex=0
     browseOffset=0
-    set_status "Created: $slug.txt "$(date '+%Y-%m-%d %H:%M')""
+    set_status "Created: $slug.txt $(date '+%Y-%m-%d %H:%M')"
 }
 
 renameNote() {
@@ -528,12 +674,28 @@ deleteNote() {
 }
 
 list_tasks() {
-    local day=$(date -d "$calendarDate" +%Y-%m-%d)
-    crontab -l 2>/dev/null | grep "# TASK:$day:" || true
+    local day
+    day=$(date -d "$calendarDate" +%Y-%m-%d)
+
+    # Cron-based tasks (repetitive)
+    crontab -l 2>/dev/null | grep "# TASK:$day:" | sed 's/^/cron|/' || true
+
+    # One-off tasks scheduled with "at"
+    if command -v at >/dev/null 2>&1; then
+        atq 2>/dev/null | while read -r job rest; do
+            [ -z "$job" ] && continue
+            # Look for our TASK marker for this day in the job body
+            local line
+            line=$(at -c "$job" 2>/dev/null | grep "# TASK:$day:" | head -n1 || true)
+            [ -z "$line" ] && continue
+            printf 'at|%s|%s\n' "$job" "$line"
+        done
+    fi
 }
 
 newTask() {
-    local day=$(date -d "$calendarDate" +%Y-%m-%d)
+    local day
+    day=$(date -d "$calendarDate" +%Y-%m-%d)
 
     # Get task description
     move 0 $((lines-1))
@@ -559,17 +721,46 @@ newTask() {
     local hour="${time%%:*}"
     local min="${time##*:}"
 
-    (crontab -l 2>/dev/null; \
-            printf '%s %s %s %s * XDG_RUNTIME_DIR=/run/user/%s DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%s/bus DISPLAY=:0 /usr/bin/notify-send --app-name=Task "Task" %q # TASK:%s:%s\n' \
-            "$min" "$hour" "$(date -d "$day" +%d)" "$(date -d "$day" +%m)" \
-            "$(id -u)" "$(id -u)" \
-        "$task" "$day" "$task") | crontab -
+    # Ask if repetitive
+    move 0 $((lines-1))
+    printf '%-*s' "$columns" ' Repetitive task? [y/N]: '
+    IFS= read -rsn1 repeat
 
-    set_status "Task added: $task at $time"
+    case "$repeat" in
+        y|Y)
+            # Repeating task: use crontab (current flow)
+            (crontab -l 2>/dev/null; \
+                printf '%s %s %s %s * XDG_RUNTIME_DIR=/run/user/%s DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%s/bus DISPLAY=:0 /usr/bin/notify-send --app-name=Task "Task" %q # TASK:%s:%s\n' \
+                    "$min" "$hour" "$(date -d "$day" +%d)" "$(date -d "$day" +%m)" \
+                    "$(id -u)" "$(id -u)" \
+                    "$task" "$day" "$task") | crontab -
+            set_status "Repeating task added: $task at $time"
+            ;;
+        *)
+            # One-off task: use at
+            if ! command -v at >/dev/null 2>&1; then
+                set_status "'at' command not found"
+                return
+            fi
+
+            local at_time
+            if ! at_time=$(date -d "$day $time" +%Y%m%d%H%M 2>/dev/null); then
+                set_status "Invalid date/time"
+                return
+            fi
+
+            if printf 'XDG_RUNTIME_DIR=/run/user/%s DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%s/bus DISPLAY=:0 /usr/bin/notify-send --app-name=Task "Task" %q # TASK:%s:%s\n' \
+                "$(id -u)" "$(id -u)" \
+                "$task" "$day" "$task" | at -t "$at_time" 2>/dev/null; then
+                set_status "One-off task added: $task at $time"
+            else
+                set_status "Failed to schedule task with at"
+            fi
+            ;;
+    esac
 }
 
 deleteTask() {
-    local day=$(date -d "$calendarDate" +%Y-%m-%d)
     mapfile -t tasks < <(list_tasks)
 
     [ ${#tasks[@]} -eq 0 ] && { set_status "No tasks"; return; }
@@ -583,7 +774,15 @@ deleteTask() {
 
     case "$yn" in
         y|Y)
-            crontab -l 2>/dev/null | grep -vF "$task" | crontab - 2>/dev/null || true
+            local kind jobid taskline
+            IFS='|' read -r kind jobid taskline <<< "$task"
+            if [ "$kind" = "cron" ]; then
+                # jobid is the original cron line
+                crontab -l 2>/dev/null | grep -vF "$jobid" | crontab - 2>/dev/null || true
+            elif [ "$kind" = "at" ]; then
+                # jobid is the at job id
+                at -d "$jobid" 2>/dev/null || atrm "$jobid" 2>/dev/null || true
+            fi
             calendarIndex=0
             set_status "Deleted"
             ;;
@@ -602,11 +801,11 @@ loop_browse() {
             $'\e[B'|j) moveSelection browseIndex browseOffset "${#presentFiles[@]}" 1 ;;
             $'\e[5'*)  moveSelection browseIndex browseOffset "${#presentFiles[@]}" -10 ;;
             $'\e[6'*)  moveSelection browseIndex browseOffset "${#presentFiles[@]}" 10 ;;
-            e|'')   [ -n "${presentFiles[browseIndex]:-}" ] && openEditor "${presentFiles[browseIndex]}" ;;
+            e|'')      [ -n "${presentFiles[browseIndex]:-}" ] && openEditor "${presentFiles[browseIndex]}" ;;
             n)         newNote ;;
             r)         renameNote ;;
             d)         deleteNote ;;
-            c) mode="calendar"; force_redraw=1; return ;;
+            c)         mode="calendar"; force_redraw=1; return ;;
             /)
                 move 0 $((lines-1))
                 printf '%-*s' "$columns" " Search: "
@@ -640,7 +839,7 @@ loop_search() {
                 fi
                 ;;
             b)         mode="browse"; force_redraw=1; return ;;
-            q)        mode="quit"; return ;;
+            q)         mode="quit"; return ;;
         esac
     done
 }
@@ -682,10 +881,10 @@ mode="browse"
 
 while :; do
     case "$mode" in
-        browse)  loop_browse ;;
-        search)  loop_search ;;
+        browse)   loop_browse ;;
+        search)   loop_search ;;
         calendar) loop_calendar ;;
-        quit)    break ;;
+        quit)     break ;;
     esac
     refresh
 done
