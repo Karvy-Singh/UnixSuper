@@ -194,7 +194,7 @@ renderStatus() {
     move 0 $((lines-1))
     
     if [ -n "$status" ]; then
-        # Truncate status to fit within terminal width minus padding
+        # truncate status to fit within terminal width minus padding
         local max_len=$((columns - 2))
         local trunc="${status:0:$max_len}"
         printf '%-*.*s' "$columns" "$columns" " $trunc"
@@ -215,9 +215,20 @@ renderSearchStatus() {
     move 0 $((lines-1))
     
     if [ -n "$status" ]; then
-        local trunc=${status:0:$((columns-10))}
-        move 0 $((lines-1))
-        printf '%-*s' "$columns" " $trunc"
+        # truncate status to fit within terminal width minus padding
+        local max_len=$((columns - 2))
+        local trunc="${status:0:$max_len}"
+        printf '%-*.*s' "$columns" "$columns" " $trunc"
+    else
+        local base_msg=' [Enter/e] Edit  [b] Browse  [q] Quit  | Results: '
+        local n_res=${#searchedFiles[@]}
+        local max_res_len=$((columns - ${#base_msg} - 2))
+        if (( max_res_len > 0 )); then
+            local res_trunc="${n_res:0:$max_res_len}"
+            printf '%-*.*s' "$columns" "$columns" "${base_msg}${res_trunc}"
+        else
+            printf '%-*.*s' "$columns" "$columns" "[enter/e]Edit [b]Browse [q]Quit"
+        fi
     fi
 }
 
