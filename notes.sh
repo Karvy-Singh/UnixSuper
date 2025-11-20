@@ -28,6 +28,7 @@ lines=$(tput lines)
 alt_screen_on(){
     printf '\e[?1049h'
     tput civis
+    tput clear
 }
 
 alt_screen_off(){
@@ -44,6 +45,7 @@ trap 'resize' WINCH
 resize(){
     columns=$(tput cols)
     lines=$(tput lines)
+    force_redraw=1
     draw_all
 }
 
@@ -60,6 +62,7 @@ calendarIndex=0
 calendarOffset=0
 mode="browse"
 status=""
+force_redraw=0
 
 set_status() {
     status="$1"
@@ -98,6 +101,7 @@ clampBrowser() {
 refresh() {
     mapfile -t presentFiles < <(list_files) || presentFiles=()
     clampBrowser
+    force_redraw=1
 }
 
 leftWidth=0
@@ -188,18 +192,28 @@ renderPreview() {
 renderStatus() {
     partitionH $((lines-2))
     move 0 $((lines-1))
-    printf ' [Enter/e] Edit  [n] New  [r] Rename  [d] Delete  [/] Search  [q] Quit  | Dir: %s ' "$notesDir"
+    
     if [ -n "$status" ]; then
-        local trunc=${status:0:$((columns-10))}  #if the status is too long then it will truncate it to max wdith-10
-        move 0 $((lines-1))
-        printf '%-*s' "$columns" " $trunc"
+        # Truncate status to fit within terminal width minus padding
+        local max_len=$((columns - 2))
+        local trunc="${status:0:$max_len}"
+        printf '%-*.*s' "$columns" "$columns" " $trunc"
+    else
+        local base_msg=' [Enter/e] Edit  [n] New  [r] Rename  [d] Delete  [/] Search  [q] Quit  | Dir: '
+        local max_dir_len=$((columns - ${#base_msg} - 2))
+        if (( max_dir_len > 0 )); then
+            local dir_trunc="${notesDir:0:$max_dir_len}"
+            printf '%-*.*s' "$columns" "$columns" "${base_msg}${dir_trunc}"
+        else
+            printf '%-*.*s' "$columns" "$columns" " [e]Edit [n]New [r]Rename [d]Del [/]Search [q]Quit"
+        fi
     fi
 }
 
 renderSearchStatus() {
     partitionH $((lines-2))
     move 0 $((lines-1))
-    printf ' [Enter/e] Edit  [b] Browse  [q] Quit  | Results: %d ' "${#searchedFiles[@]}"
+    
     if [ -n "$status" ]; then
         local trunc=${status:0:$((columns-10))}
         move 0 $((lines-1))
@@ -314,7 +328,15 @@ renderTasks() {
 renderCalendarStatus() {
     partitionH $((lines-2))
     move 0 $((lines-1))
-    printf ' [←→] Change Day  [n] New Task  [d] Delete  [b] Browse  [q] Quit'
+    
+    if [ -n "$status" ]; then
+        local max_len=$((columns - 2))
+        local trunc="${status:0:$max_len}"
+        printf '%-*.*s' "$columns" "$columns" " $trunc"
+    else
+        local msg=' [←→] Change Day  [n] New Task  [d] Delete  [b] Browse  [q] Quit'
+        printf '%-*.*s' "$columns" "$columns" "$msg"
+    fi
 }
 
 runSearch() {
@@ -347,10 +369,15 @@ draw_all() {
     if (( ${status_until:-0} > 0 && now >= ${status_until:-0} )); then
         status=""
         status_until=0
+        force_redraw=1
     fi
 
     layoutDim
-    tput clear
+
+    if [ "$force_redraw" -eq 1 ]; then
+        tput clear
+        force_redraw=0
+    fi
     case "$mode" in
         browse)
             renderSidePane
@@ -417,6 +444,7 @@ openEditor() {
     printf '%s' "$file" >"$current"
     "$editor" "$file"
     alt_screen_on
+    tput clear
     refresh
 }
 
@@ -438,6 +466,7 @@ newNote() {
     $editor $file
     alt_screen_on
 
+    tput clear
     refresh
     browseIndex=0
     browseOffset=0
@@ -566,7 +595,7 @@ loop_browse() {
             n)         newNote ;;
             r)         renameNote ;;
             d)         deleteNote ;;
-            c) mode="calendar"; return ;;
+            c) mode="calendar"; force_redraw=1; return ;;
             /)
                 move 0 $((lines-1))
                 printf '%-*s' "$columns" " Search: "
@@ -577,6 +606,7 @@ loop_browse() {
                 stty "$tty_settings"
                 mode="search"
                 runSearch "$query"
+                force_redraw=1
                 return
                 ;;
             q)         mode="quit"; return ;;
@@ -598,7 +628,7 @@ loop_search() {
                     openEditor "$file"
                 fi
                 ;;
-            b)         mode="browse"; return ;;
+            b)         mode="browse"; force_redraw=1; return ;;
             q)        mode="quit"; return ;;
         esac
     done
@@ -627,7 +657,7 @@ loop_calendar() {
                 ;;
             n) newTask ;;
             d) deleteTask ;;
-            b) mode="browse"; return ;;
+            b) mode="browse"; force_redraw=1; return ;;
             q) mode="quit"; return ;;
         esac
     done
@@ -636,7 +666,7 @@ loop_calendar() {
 # Main
 alt_screen_on
 layoutDim
-tput clear
+force_redraw=1
 mode="browse"
 
 while :; do
@@ -648,5 +678,3 @@ while :; do
     esac
     refresh
 done
-
-
