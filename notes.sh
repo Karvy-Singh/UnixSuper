@@ -120,7 +120,9 @@ layoutDim() {
 partitionH() {
     local y=$1
     move 0 "$y"
-    printf '%*s' "$columns" '' | tr ' ' '─'
+    for ((i=0; i < columns; i++)); do 
+        echo -n "─"
+    done
 }
 
 panel_title() {
